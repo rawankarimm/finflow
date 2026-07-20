@@ -1,4 +1,4 @@
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 from ingestion.pack.ingest_all_sequential import ingest_paysim
 from ingestion.pack.ingest_all_sequential import ingest_fred
 from ingestion.pack.ingest_all_sequential import ingest_complaints
@@ -10,8 +10,8 @@ def run_parallel():
     print('Starting parallel ingestion...\n')
 
     start_time = time.perf_counter()
-
-    with ThreadPoolExecutor(max_workers=3) as executor :
+    with ProcessPoolExecutor(max_workers=3) as executor: 
+    #with ThreadPoolExecutor(max_workers=3) as executor :
         #mapping future objects to their names
         futures_map = {executor.submit(ingest_paysim): 'Paysim',
         executor.submit(ingest_fred): 'FRED',
