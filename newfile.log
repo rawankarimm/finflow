@@ -1,0 +1,5 @@
+2026-07-20 02:18:20,958 DEBUG: Harmless debug message
+2026-07-20 02:18:20,958 INFO: Just an information
+2026-07-20 02:18:20,958 WARNING: Its a warning
+2026-07-20 02:18:20,958 ERROR: Did you try to divide by zero?
+2026-07-20 02:18:20,958 CRITICAL: Internet is down
