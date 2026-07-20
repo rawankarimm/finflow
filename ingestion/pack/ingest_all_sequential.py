@@ -14,7 +14,7 @@ transaction_output_path = os.path.join(processed_dir, "transactions.parquet")
 def ingest_paysim():
     # 1- Reading CSV file
     df = pd.read_csv(f"{PipelineConfig().raw_dir}/PS_20174392719_1491204439457_log.csv")
-    print('loading')
+    print('Starting Paysim ingestion..')
     print("Before:\n", df.columns.tolist())  #converts df column headers to a python list
 
     # 2- Built-in function to check if the object is a an instance of a Pandas DataFrame
