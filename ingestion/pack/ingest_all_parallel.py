@@ -10,8 +10,8 @@ def run_parallel():
     print('Starting parallel ingestion...\n')
 
     start_time = time.perf_counter()
-    with ProcessPoolExecutor(max_workers=3) as executor: 
-    #with ThreadPoolExecutor(max_workers=3) as executor :
+    #with ProcessPoolExecutor(max_workers=3) as executor: 
+    with ThreadPoolExecutor(max_workers=3) as executor :
         #mapping future objects to their names
         futures_map = {executor.submit(ingest_paysim): 'Paysim',
         executor.submit(ingest_fred): 'FRED',

@@ -45,7 +45,9 @@ def transform_parallel(chunks: list[pd.DataFrame], n_workers: int) -> pd.DataFra
     """Applies transform_chunk across all chunks using a process pool."""
     results = [None] * len(chunks)
     # switching ThreadPoolExecutor and ProcessPoolExecutor leads to much faster results
-    with ThreadPoolExecutor(max_workers=n_workers) as executor:
+
+    with ProcessPoolExecutor(max_workers=n_workers) as executor:
+    #with ThreadPoolExecutor(max_workers=n_workers) as executor:
         # submit all chunks up front, then collect -- do NOT call
         # future.result() inside the submit loop, that serializes everything
         futures_map = {executor.submit(transform_chunk, c): i for i, c in enumerate(chunks)}
@@ -102,7 +104,7 @@ def run_transform_benchmarks():
     print("=" * 50)
 
     n_workers = os.cpu_count()
-    # n_workers = 4
+    #n_workers = 4
 
     chunk_sizes_to_try = [500_000, 1_000_000, 2_000_000]  # DESIGN CHOICE B
 
