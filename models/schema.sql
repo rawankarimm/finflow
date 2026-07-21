@@ -1,26 +1,3 @@
-CREATE TABLE fact_transactions(
-    transaction_id INT PRIMARY KEY,
-
-    --Foreign keys:
-    transaction_type_id INT NOT NULL REFERENCES dim_transaction_type(transaction_type_id),
-    step INT NOT NULL REFERENCES dim_time(step),
-    sender_account_id INT NOT NULL REFERENCES dim_account(account_id),
-    receiver_account_id INT NOT NULL REFERENCES dim_account(account_id),
-
-    amount FLOAT NOT NULL,
-    log_amount FLOAT,
-    balance_drain FLOAT,
-    is_fraud BOOLEAN,
-    is_flagged_fraud BOOLEAN,
-    old_balance_sender FLOAT,
-    new_balance_sender FLOAT,
-    old_balance_receiver FLOAT,
-    new_balance_receiver FLOAT
-
-);  
-
-
-
 CREATE TABLE dim_transaction_type(
     transaction_type_id INT PRIMARY KEY,
     transaction_type_name VARCHAR(50)
@@ -56,3 +33,25 @@ CREATE TABLE complaints (
     resolution VARCHAR (255) NOT NULL
 
 ); 
+
+
+CREATE TABLE fact_transactions(
+    transaction_id INT PRIMARY KEY,
+
+    --Foreign keys:
+    transaction_type_id INT NOT NULL REFERENCES dim_transaction_type(transaction_type_id),
+    step INT NOT NULL REFERENCES dim_time(step),
+    sender_account_id INT NOT NULL REFERENCES dim_account(account_id),
+    receiver_account_id INT NOT NULL REFERENCES dim_account(account_id),
+
+    amount FLOAT NOT NULL,
+    log_amount FLOAT,
+    balance_drain FLOAT,
+    is_fraud BOOLEAN,
+    is_flagged_fraud BOOLEAN,
+    old_balance_sender FLOAT,
+    new_balance_sender FLOAT,
+    old_balance_receiver FLOAT,
+    new_balance_receiver FLOAT
+
+);  
