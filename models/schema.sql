@@ -1,20 +1,20 @@
-CREATE TABLE dim_transaction_type(
+CREATE TABLE IF NOT EXISTS dim_transaction_type(
     transaction_type_id INT PRIMARY KEY,
     transaction_type_name VARCHAR(50)
 );
 
-CREATE TABLE dim_account_type(
+CREATE TABLE IF NOT EXISTS dim_account_type(
     account_type_id INT PRIMARY KEY,
     type_name VARCHAR(50) NOT NULL
 );
 
-CREATE TABLE dim_account(
+CREATE TABLE IF NOT EXISTS dim_account(
     account_id INT PRIMARY KEY,
     account_name VARCHAR(100),
     account_type_id INT REFERENCES dim_account_type(account_type_id)
 );
 
-CREATE TABLE dim_time(
+CREATE TABLE IF NOT EXISTS dim_time(
     step INT PRIMARY KEY,
     sim_day INT ,
     sim_week INT ,
@@ -22,7 +22,7 @@ CREATE TABLE dim_time(
 );
 
 
-CREATE TABLE complaints (
+CREATE TABLE IF NOT EXISTS complaints (
     complaint_id INT PRIMARY KEY,
     date_received DATE,
     product VARCHAR(100) NOT NULL,
@@ -35,7 +35,7 @@ CREATE TABLE complaints (
 ); 
 
 
-CREATE TABLE fact_transactions(
+CREATE TABLE IF NOT EXISTS fact_transactions(
     transaction_id INT PRIMARY KEY,
 
     --Foreign keys:
