@@ -5,7 +5,7 @@ class PipelineConfig:
     processed_dir: str = "data/processed"    
     db_path: str = "data/finflow.duckdb"
     fred_api_key: str = ""
-    max_workers: int = 4
-    chunk_size: int = 500_000
+    max_workers: int = 2
+    chunk_size: int = 3_000_000
     
 #configure = PipelineConfig()

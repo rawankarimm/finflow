@@ -7,3 +7,8 @@ sys.path.append(str(root_dir)) #adds the 'finflow' folder to the Python search p
 
 from config.package.logger import logger
 from config.package.settings import PipelineConfig
+
+#__file__ is a built-in variable indicating the file path.
+#parents[0] --> the folder containing this file 
+#parents[1] --> moves two steps up
+#avoiding ModuleNotFoundError

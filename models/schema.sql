@@ -34,12 +34,14 @@ CREATE TABLE IF NOT EXISTS complaints (
 
 ); 
 
+CREATE SEQUENCE IF NOT EXISTS transaction_seq START 1;
 
 CREATE TABLE IF NOT EXISTS fact_transactions(
-    transaction_id INT PRIMARY KEY,
+    
+    transaction_id INT PRIMARY KEY DEFAULT nextval('transaction_seq'),
 
     --Foreign keys:
-    transaction_type_id INT NOT NULL REFERENCES dim_transaction_type(transaction_type_id),
+    transaction_type_id INT REFERENCES dim_transaction_type(transaction_type_id),
     step INT NOT NULL REFERENCES dim_time(step),
     sender_account_id INT NOT NULL REFERENCES dim_account(account_id),
     receiver_account_id INT NOT NULL REFERENCES dim_account(account_id),

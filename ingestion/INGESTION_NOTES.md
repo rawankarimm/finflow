@@ -14,8 +14,6 @@ In the benchmark execution, we evaluated the performance of three primary ingest
 * **Total Clock Time Saved:** `10.2231 seconds` (approx. **64.5% reduction** in run time)
 * **Performance Speedup Factor:** **`2.82x`**
 
-*(Note: Actual speedup factors approach the theoretical limit of `3.0x` because we run exactly 3 concurrent tasks on 3 dedicated worker threads, meaning the longest-running individual task determines the overall parallel execution duration).*
-
 ---
 
 ## 2. Why Parallel Ingestion Succeeded
@@ -116,9 +114,3 @@ just adds overhead without added parallelism benefit).
 See console output from `transform_parallel.py` for the actual
 sequential vs. parallel timings and speedup per chunk size on this run;
 the script prints a summary table at the end of `__main__`.
-
-## Deliverable checklist
-
-- [x] Transformed parquet saved (`data/processed/transactions_transformed.parquet`)
-- [x] Benchmark logged (sequential vs. parallel, per chunk size)
-- [x] Chunk-size analysis documented (this file)

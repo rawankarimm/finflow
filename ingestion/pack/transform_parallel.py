@@ -1,5 +1,5 @@
 
-import os
+import os  #for cpu cound or making directories 
 import time
 import numpy as np
 import pandas as pd
@@ -11,19 +11,20 @@ from config.package import logger
 # Where the transformed dataset gets saved
 # processed_dir = os.path.join("data", "processed")
 transformed_output_path = os.path.join(processed_dir, "transactions_transformed.parquet")
-df = pd.read_parquet(transaction_output_path)
+# df = pd.read_parquet(transaction_output_path) ####dead
 
 def transform_chunk(df: pd.DataFrame) -> pd.DataFrame:
     """
     Applies type coercion + derived columns to a single chunk.
     """
-    df = df.copy()
+    df = df.copy() #to avoid mutating when slicing in 'make_chunks()' and raising SettingWithCopyWarning
 
     df["amount"] = df["amount"].astype("float64")
     df["oldbalance_org"] = df["oldbalance_org"].astype("float64")
     df["newbalance_orig"] = df["newbalance_orig"].astype("float64")
 
     df["balance_drain"] = df["oldbalance_org"] - df["newbalance_orig"] - df["amount"]
+    #to handle right-skewness for modeling and visualization
     df["log_amount"] = np.log1p(df["amount"])  # log1p handles amount == 0 safely
 
     return df
@@ -43,22 +44,21 @@ def transform_sequential(chunks: list[pd.DataFrame]) -> pd.DataFrame:
 
 def transform_parallel(chunks: list[pd.DataFrame], n_workers: int) -> pd.DataFrame:
     """Applies transform_chunk across all chunks using a process pool."""
-    results = [None] * len(chunks)
+    results = [None] * len(chunks) #preserving original row order regardless of the order they finish in 
     # switching ThreadPoolExecutor and ProcessPoolExecutor leads to much faster results
 
     with ProcessPoolExecutor(max_workers=n_workers) as executor:
     #with ThreadPoolExecutor(max_workers=n_workers) as executor:
-        # submit all chunks up front, then collect -- do NOT call
-        # future.result() inside the submit loop, that serializes everything
+        
         futures_map = {executor.submit(transform_chunk, c): i for i, c in enumerate(chunks)}
 
         for future in as_completed(futures_map):
             i = futures_map[future]
             try:
-                results[i] = future.result(timeout=60)
-            except Exception as e:
+                results[i] = future.result(timeout=60)  #is it alreading done at this point?
+            except TimeoutError as e:
                 logger.error(f"Chunk {i} failed to transform: {e}")
-                raise
+                raise  #re-raising the error to avoid returning an incomplete results list and producing a corrupted DataFrame
 
     return pd.concat(results, ignore_index=True)
 
@@ -94,7 +94,7 @@ def benchmark_transform(chunk_size: int, n_workers: int):
         "sequential_seconds": round(seq_time, 4),
         "parallel_seconds": round(par_time, 4),
         "speedup": round(speedup, 2),
-        "result_df": par_result,
+        "result_df": par_result, #best chunk-size speedup saved to disk
     }
 
 
@@ -129,6 +129,7 @@ def run_transform_benchmarks():
 
 
 if __name__ == "__main__":
+    #using spawn() instead of fork()
     # ProcessPoolExecutor requires this guard so worker processes don't
-    # re-import and re-execute this module's top-level code.
+    # re-import and re-execute this module's top-level code. 
     run_transform_benchmarks()

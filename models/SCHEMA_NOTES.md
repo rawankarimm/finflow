@@ -15,7 +15,7 @@ We're working with a large, frequently-changing dataset, so keeping
 redundancy low and enforcing referential integrity on master data matters
 more here than it would on a small, static dataset.
 
-Account type (individual vs. merchant) is a reusable, low-cardinality
+Account type (individual vs. merchant) is a reusable
 attribute — a small set of values shared across many accounts — which
 makes it a good candidate to normalize out into its own table instead of
 repeating the label on every account row. This also matters for the
