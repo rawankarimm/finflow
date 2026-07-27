@@ -1,219 +1,132 @@
-import argparse
 import os
 import time
-from concurrent.futures import ProcessPoolExecutor
-import duckdb as dd
-import pyarrow.dataset as ds
-import pyarrow.parquet as pq
+import duckdb
+import pyarrow.parquet as pq  #loading the parquet file lazily in batches instead of loading the whole dataset to RAM at once 
+import config
 
-# --- Configuration & Paths ---
-# Adjust imports or paths if needed based on your setup
-try:
-    from config.package.settings import PipelineConfig
-
-    DB_PATH = getattr(PipelineConfig, "DB_PATH", "data/finflow.duckdb")
-    SCHEMA_PATH = getattr(PipelineConfig, "SCHEMA_PATH", "models/schema.sql")
-    PARQUET_PATH = getattr(
-        PipelineConfig,
-        "FACT_PARQUET_PATH",
-        "data/processed/transactions_transformed.parquet",
-    )
-    CHUNK_SIZE = getattr(PipelineConfig, "CHUNK_SIZE", 2_000_000)
-except ImportError:
-    DB_PATH = "data/finflow.duckdb"
-    SCHEMA_PATH = "models/schema.sql"
-    PARQUET_PATH = "data/processed/transactions_transformed.parquet"
-    CHUNK_SIZE = 100_000
-
-
-def init_database(db_path: str, schema_path: str, reload_flag: bool = False):
-    """Creates database directory and applies schema DDL."""
-    os.makedirs(os.path.dirname(db_path), exist_ok=True)
-
-    with open(schema_path, "r", encoding="utf-8") as f:
-        schema_sql = f.read()
-
-    conn = dd.connect(db_path)
-
-    if reload_flag:
-        print("[INFO] Reload flag passed. Truncating fact_transactions...")
-        conn.execute("DROP TABLE IF EXISTS fact_transactions;")
-
-    # Apply DDL schema
-    conn.execute(schema_sql)
-    conn.close()
-
-
-def load_dimension_tables(db_path: str):
-    """Loads dimension tables before loading fact tables."""
-    conn = dd.connect(db_path)
-    # Dimension loading logic (if any DML script/seed files exist)
-    conn.close()
-
-
-def process_chunk_worker(parquet_path: str, offset: int, chunk_size: int):
-    """Worker task executed in ProcessPoolExecutor.
-
-    Reads a slice of the transformed Parquet file and returns the PyArrow
-    Table. Does NOT open DB connection directly to prevent Windows OS file lock
-    conflicts.
-    """
-    dataset = ds.dataset(parquet_path, format="parquet")
-    arrow_table = dataset.to_table().slice(offset, chunk_size)
-    return arrow_table
-
-
-def load_fact_transactions_parallel(
-    db_path: str, parquet_path: str, chunk_size: int
-):
-    """Processes chunks in parallel using ProcessPoolExecutor and streams them
-
-    into DuckDB sequentially in the main process.
-    """
-    if not os.path.exists(parquet_path):
-        raise FileNotFoundError(
-            f"Parquet file not found at '{parquet_path}'. "
-            "Please ensure the transformation step ran and generated the output file."
-        )
-
-    parquet_file = pq.ParquetFile(parquet_path)
-    total_rows = parquet_file.metadata.num_rows
-    offsets = list(range(0, total_rows, chunk_size))
-
-    print(
-        f"[INFO] Loading {total_rows:,} rows across {len(offsets)} chunks using ProcessPoolExecutor..."
-    )
-
-    conn = dd.connect(db_path)
-
-    # Spawn process pool for parallel chunk extraction
-    with ProcessPoolExecutor() as executor:
-        futures = [
-            executor.submit(
-                process_chunk_worker, parquet_path, offset, chunk_size
-            )
-            for offset in offsets
-        ]
-
-        for future in futures:
-            
-            chunk_table = future.result()
-
-
-            # Register PyArrow chunk table in DuckDB memory context
-            conn.register("temp_chunk", chunk_table)
-
-        
-            #Insert using explicit column mapping or standard INSERT OR IGNORE
-            # Before loading, make sure the sequence exists in DuckDB
-    conn.execute("CREATE SEQUENCE IF NOT EXISTS transaction_seq START 1;")
-
-    
-
-    # Execute the insert inside your chunk loop
-    conn.execute(
-    """
-        INSERT INTO fact_transactions (
-        transaction_id,
-        transaction_type_id,
-        step,
-        sender_account_id,
-        receiver_account_id,
-        amount,
-        log_amount,
-        balance_drain,
-        is_fraud,
-        is_flagged_fraud,
-        old_balance_sender,
-        new_balance_sender,
-        old_balance_receiver,
-        new_balance_receiver
-    )
-        SELECT 
-        nextval('transaction_seq') AS transaction_id,
-        dt.transaction_type_id,
-        tc.step,
-        sa.account_id AS sender_account_id,
-        ra.account_id AS receiver_account_id,
-        tc.amount,
-        tc.log_amount,
-        tc.balance_drain,
-        CAST(tc.is_fraud AS BOOLEAN) AS is_fraud,
-        CAST(tc.is_flagged_fraud AS BOOLEAN) AS is_flagged_fraud,
-        tc.oldbalance_org AS old_balance_sender,
-        tc.newbalance_orig AS new_balance_sender,
-        tc.oldbalance_dest AS old_balance_receiver,
-        tc.newbalance_dest AS new_balance_receiver
-        FROM temp_chunk tc
-        LEFT JOIN dim_transaction_type dt ON UPPER(TRIM(tc.type)) = UPPER(TRIM(dt.transaction_type_name))
-        LEFT JOIN dim_account sa ON tc.name_orig = sa.account_name
-        LEFT JOIN dim_account ra ON tc.name_dest = ra.account_name
-       
-"""
-)
-            
-    conn.unregister("temp_chunk")
-
-    conn.close()
-
-
-
-
-
-
-def verify_row_count(db_path: str, parquet_path: str):
-    """Verifies DuckDB row count against the source Parquet file metadata."""
-    parquet_file = pq.ParquetFile(parquet_path)
-    expected_rows = parquet_file.metadata.num_rows
-
-    conn = dd.connect(db_path)
-    actual_rows = conn.execute(
-        "SELECT COUNT(*) FROM fact_transactions"
-    ).fetchone()[0]
-    conn.close()
-
-    print(f"[VERIFY] Source Parquet Rows: {expected_rows:,}")
-    print(f"[VERIFY] DuckDB Loaded Rows:  {actual_rows:,}")
-
-    assert (
-        actual_rows == expected_rows
-    ), f"Mismatch detected! Expected {expected_rows} rows, found {actual_rows}"
-    print("[SUCCESS] Row counts match perfectly.")
-
+DB_PATH = getattr(config, "db_path", "data/finflow.duckdb")
+SCHEMA_SQL_PATH = "models/schema.sql"
+PROCESSED_TRANSACTIONS = "data/processed/transactions.parquet"
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Load transformed data into DuckDB with parallel chunk processing."
-    )
-    parser.add_argument(
-        "--reload",
-        action="store_true",
-        help="Reset/drop fact tables before loading.",
-    )
-    args = parser.parse_args()
+    start_time = time.perf_counter()
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 
-    start_time = time.time()
+    # 1. Reset Schema for Idempotency
+    conn = duckdb.connect(DB_PATH)
+    
+    # Restrict DuckDB internal RAM usage
+    conn.execute("SET memory_limit='1GB';")
 
-    # 1. Initialize schema & DB
-    print("[STEP 1/4] Initializing Database & Schema...")
-    init_database(DB_PATH, SCHEMA_PATH, reload_flag=args.reload)
+    print("Resetting schema...")
 
-    # 2. Load dimension tables
-    print("[STEP 2/4] Loading Dimension Tables...")
-    load_dimension_tables(DB_PATH)
+    # DROP TABLE to guarantee idempotency on re-running the script
+    conn.execute("""
+        DROP TABLE IF EXISTS fact_transactions;
+        DROP TABLE IF EXISTS complaints;
+        DROP TABLE IF EXISTS dim_account;
+        DROP TABLE IF EXISTS dim_account_type;
+        DROP TABLE IF EXISTS dim_transaction_type;
+        DROP TABLE IF EXISTS dim_time;
+        DROP SEQUENCE IF EXISTS transaction_seq;
+    """)
 
-    # 3. Load fact_transactions in chunks
-    print("[STEP 3/4] Ingesting Fact Transactions in Parallel...")
-    load_fact_transactions_parallel(DB_PATH, PARQUET_PATH, CHUNK_SIZE)
+    # Executes DDL commands to recreate empty fact and dimention tables cleanly
+    with open(SCHEMA_SQL_PATH, "r") as f:
+        conn.execute(f.read())
 
-    # # 4. Verify row count
-    # print("[STEP 4/4] Verifying Row Counts...")
-    # verify_row_count(DB_PATH, PARQUET_PATH)
+    # 2. Populate dimension tables first in order to join their primary keys when inserting rows in the fact table 
+    print("Populating dimension tables...")
+    
+    conn.execute("""
+        INSERT INTO dim_transaction_type (transaction_type_id, transaction_type_name)
+        SELECT ROW_NUMBER() OVER (), type FROM (SELECT DISTINCT type FROM read_parquet(?));
+    """, [PROCESSED_TRANSACTIONS])  #auto generating a unique ID for each type
 
-    elapsed_time = time.time() - start_time
-    print(f"\n[COMPLETE] Total load time: {elapsed_time:.2f} seconds")
 
+    # Populate account types for lookup table 
+    conn.execute("""
+        INSERT INTO dim_account_type VALUES (1, 'Customer'), (2, 'Merchant') ON CONFLICT DO NOTHING;
+    """)
+    
+    conn.execute("""
+        INSERT INTO dim_account (account_id, account_name, account_type_id)
+        SELECT ROW_NUMBER() OVER (), account_name, CASE WHEN account_name LIKE 'M%' THEN 2 ELSE 1 END
+        FROM (SELECT name_orig as account_name FROM read_parquet(?) UNION SELECT name_dest FROM read_parquet(?));
+    """, [PROCESSED_TRANSACTIONS, PROCESSED_TRANSACTIONS])
+    
+    conn.execute("""
+        INSERT INTO dim_time (step, sim_day, sim_week, hour_of_day)
+        SELECT DISTINCT step, CAST(FLOOR((step - 1) / 24) + 1 AS INT), CAST(FLOOR((step - 1) / 168) + 1 AS INT), CAST((step - 1) % 24 AS INT)
+        FROM read_parquet(?);
+    """, [PROCESSED_TRANSACTIONS])
 
-# CRITICAL: Ensures Windows child processes do not re-execute script code on spawn
+    # 3. Stream Fact Table in Chunks (RAM Safe)
+    chunk_size = getattr(config, "chunk_size", 500000)
+    print(f"\n--- Loading Fact Transactions in chunks of {chunk_size:,} ---")
+    
+    parquet_file = pq.ParquetFile(PROCESSED_TRANSACTIONS)
+    
+    for i, batch in enumerate(parquet_file.iter_batches(batch_size=chunk_size)):
+        conn.execute("""
+            INSERT INTO fact_transactions (
+                transaction_type_id,
+                step,
+                sender_account_id,
+                receiver_account_id,
+                amount,
+                log_amount,
+                balance_drain,
+                is_fraud,
+                is_flagged_fraud,
+                old_balance_sender,
+                new_balance_sender,
+                old_balance_receiver,
+                new_balance_receiver
+            )
+            SELECT 
+                tt.transaction_type_id,
+                t.step,
+                sa.account_id as sender_account_id,
+                ra.account_id as receiver_account_id,
+                t.amount,
+                ln(t.amount + 1) as log_amount,
+                (t.oldbalance_org - t.newbalance_orig) as balance_drain,
+                t.is_fraud,
+                t.is_flagged_fraud,
+                t.oldbalance_org as old_balance_sender,
+                t.newbalance_orig as new_balance_sender,
+                t.oldbalance_dest as old_balance_receiver,
+                t.newbalance_dest as new_balance_receiver
+            FROM batch t
+            JOIN dim_transaction_type tt ON t.type = tt.transaction_type_name
+            JOIN dim_account sa ON t.name_orig = sa.account_name
+            JOIN dim_account ra ON t.name_dest = ra.account_name
+        """)
+        print(f"Processed chunk {i + 1}: {len(batch):,} rows inserted.")
+
+    # 4. Verify Row Count
+    db_row_count = conn.execute("SELECT COUNT(*) FROM fact_transactions").fetchone()[0]
+    parquet_row_count = parquet_file.metadata.num_rows
+
+    print(f"\nSource Parquet Rows : {parquet_row_count:,}")
+    print(f"DuckDB Loaded Rows  : {db_row_count:,}")
+
+    if db_row_count == parquet_row_count:
+        print("SUCCESS: Row counts match!")
+    else:
+        print(f"MISMATCH: Loaded {db_row_count} rows out of {parquet_row_count} expected rows.")
+
+    conn.close()
+
+    print(f"Total load time: {time.perf_counter() - start_time:.2f} seconds")
+
 if __name__ == "__main__":
     main()
+
+
+
+
+# DuckDB is an embedded database (like SQLite). If multiple processes spawned by
+# ProcessPoolExecutor try to execute INSERT statements into the same finflow.
+# duckdb file simultaneously, DuckDB throws a lock exception (IO Error: Could not set lock on file)
