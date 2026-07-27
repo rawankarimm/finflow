@@ -15,7 +15,11 @@ We're working with a large, frequently-changing dataset, so keeping
 redundancy low and enforcing referential integrity on master data matters
 more here than it would on a small, static dataset.
 
+<<<<<<< HEAD
 Account type (individual vs. merchant) is a reusable
+=======
+Account type (individual vs. merchant) is a reusable, low-cardinality
+>>>>>>> c5dc0363bb7a4e7f8592c15b2c8f9e752f76a33e
 attribute — a small set of values shared across many accounts — which
 makes it a good candidate to normalize out into its own table instead of
 repeating the label on every account row. This also matters for the
@@ -34,4 +38,8 @@ downstream.
   risk of inconsistent data lower.
 
 The trade-off is one extra join when querying account type alongside
+<<<<<<< HEAD
 transactions — acceptable here given the benefits above.
+=======
+transactions — acceptable here given the benefits above.
+>>>>>>> c5dc0363bb7a4e7f8592c15b2c8f9e752f76a33e
