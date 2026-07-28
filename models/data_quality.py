@@ -1,19 +1,24 @@
 import duckdb
 from config.package import logger
+import os
 
 class DataQualityError(Exception):
     pass
 
-conn = duckdb.connect('finflow.db')
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DB_PATH = os.path.join(BASE_DIR, "finflow.duckdb")
+
+conn = duckdb.connect(DB_PATH, read_only=True)
 
 def check():
         # 1- checking for duplicate ids
-        duplicates = conn.execute("""""
-            SELECT transaction_id
-            FROM fact_transactions
-            GROUP BY transaction_id
-            HAVING COUNT(*) > 1 
-       """ ).fetchall()
+        duplicates = conn.execute("""
+        SELECT transaction_id
+        FROM fact_transactions
+        GROUP BY transaction_id
+        HAVING COUNT(*) > 1 
+        """).fetchall()
         
         if len(duplicates) > 0:
             raise DataQualityError (f'{len(duplicates)} found!')
