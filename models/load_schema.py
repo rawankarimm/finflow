@@ -26,7 +26,7 @@ def main():
 
     print("Resetting schema...")
 
-    # Fix 2: Wrap DDL and Inserts in a single transaction block for speed & disk durability
+    # Wrap DDL and Inserts in a single transaction block for speed & disk durability
     conn.execute("BEGIN TRANSACTION;")
 
     # DROP TABLE to guarantee idempotency on re-running the script
@@ -49,22 +49,31 @@ def main():
     
     conn.execute("""
         INSERT INTO dim_transaction_type (transaction_type_id, transaction_type_name)
-        SELECT ROW_NUMBER() OVER (), type FROM (SELECT DISTINCT type FROM read_parquet(?));
+        SELECT ROW_NUMBER() OVER (), type
+        FROM (SELECT DISTINCT type FROM read_parquet(?));
     """, [PROCESSED_TRANSACTIONS])
 
     conn.execute("""
-        INSERT INTO dim_account_type VALUES (1, 'Customer'), (2, 'Merchant') ON CONFLICT DO NOTHING;
+        INSERT INTO dim_account_type VALUES
+        (1, 'Customer'), (2, 'Merchant')
+        ON CONFLICT DO NOTHING;
     """)
     
     conn.execute("""
         INSERT INTO dim_account (account_id, account_name, account_type_id)
-        SELECT ROW_NUMBER() OVER (), account_name, CASE WHEN account_name LIKE 'M%' THEN 2 ELSE 1 END
+        SELECT ROW_NUMBER() OVER (),
+        account_name,
+        CASE WHEN account_name LIKE 'M%' THEN 2 ELSE 1 END
         FROM (SELECT name_orig as account_name FROM read_parquet(?) UNION SELECT name_dest FROM read_parquet(?));
     """, [PROCESSED_TRANSACTIONS, PROCESSED_TRANSACTIONS])
     
     conn.execute("""
         INSERT INTO dim_time (step, sim_day, sim_week, hour_of_day)
-        SELECT DISTINCT step, CAST(FLOOR((step - 1) / 24) + 1 AS INT), CAST(FLOOR((step - 1) / 168) + 1 AS INT), CAST((step - 1) % 24 AS INT)
+        SELECT
+        DISTINCT step,
+        CAST(FLOOR((step - 1) / 24) + 1 AS INT),
+        CAST(FLOOR((step - 1) / 168) + 1 AS INT),
+        CAST((step - 1) % 24 AS INT)
         FROM read_parquet(?);
     """, [PROCESSED_TRANSACTIONS])
 
@@ -117,7 +126,10 @@ def main():
 
     # 4. Verify Row Count
     db_row_count = conn.execute("SELECT COUNT(*) FROM fact_transactions").fetchone()[0]
-    parquet_row_count = parquet_file.metadata.num_rows
+    
+    parquet_row_count = conn.execute(
+        "SELECT COUNT(*) FROM read_parquet(?)", [PROCESSED_TRANSACTIONS]
+    ).fetchone()[0]
 
     print(f"\nSource Parquet Rows : {parquet_row_count:,}")
     print(f"DuckDB Loaded Rows  : {db_row_count:,}")
