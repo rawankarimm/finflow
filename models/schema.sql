@@ -33,10 +33,9 @@ CREATE TABLE IF NOT EXISTS complaints (
     resolution VARCHAR(255) NOT NULL
 ); 
 
--- DuckDB automatically handles auto-increment on BIGINT PRIMARY KEY
--- without needing 'CREATE SEQUENCE' or 'DEFAULT nextval()'
+CREATE SEQUENCE IF NOT EXISTS fact_transactions_id_seq START WITH 1 INCREMENT BY 1;
 CREATE TABLE IF NOT EXISTS fact_transactions (
-    transaction_id BIGINT PRIMARY KEY,
+    transaction_id BIGINT PRIMARY KEY DEFAULT nextval('fact_transactions_id_seq'),
     transaction_type_id INT,
     step INT NOT NULL,
     sender_account_id INT NOT NULL,
