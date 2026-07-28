@@ -3,13 +3,14 @@ import time
 import duckdb
 import matplotlib.pyplot as plt
 import seaborn as sns
+import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 
 # Ensure absolute path to finflow.duckdb in project root
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(PROJECT_ROOT, "finflow.duckdb")
 
-print(f"Connecting to database at: {DB_PATH}")
+print(f"Connecting to database at: {DB_PATH}") #checking path 
 
 # 1.Time Series
 def query_daily_volume():
@@ -115,6 +116,85 @@ def plot_time_series(par_results):
 
     print(f"\nChart successfully saved to {output_path}")
 
+# 2.Amount Distribution
+
+def query_amount_distribution():
+    conn = duckdb.connect(DB_PATH, read_only=True)
+    result = conn.execute("""
+        SELECT
+            dtt.transaction_type_name AS transaction_type,
+            ft.amount
+        FROM fact_transactions ft
+        JOIN dim_transaction_type dtt
+            ON ft.transaction_type_id = dtt.transaction_type_id
+        WHERE dtt.transaction_type_name IN ('TRANSFER', 'CASH_OUT')
+    """).df()
+    conn.close()
+    return result
+
+
+def _normal_pdf(x, mu, sigma):
+    if sigma <= 0:
+        return np.zeros_like(x, dtype=float)
+    z = (x - mu) / sigma
+    return np.exp(-0.5 * z**2) / (sigma * np.sqrt(2 * np.pi))
+
+
+def plot_amount_distribution():
+    df = query_amount_distribution()
+    df["log_amount_plus_one"] = np.log1p(df["amount"])
+
+    reports_dir = os.path.join(PROJECT_ROOT, "reports")
+    os.makedirs(reports_dir, exist_ok=True)
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    sns.set_theme(style="whitegrid")
+
+    for transaction_type, group in df.groupby("transaction_type", sort=True):
+        sns.kdeplot(
+            data=group,
+            x="log_amount_plus_one",
+            label=transaction_type,
+            fill=True,
+            alpha=0.2,
+            linewidth=2,
+            ax=ax
+        )
+
+        mu = float(group["log_amount_plus_one"].mean())
+        sigma = float(group["log_amount_plus_one"].std(ddof=0))
+
+        x_vals = np.linspace(
+            group["log_amount_plus_one"].min(),
+            group["log_amount_plus_one"].max(),
+            400
+        )
+        ax.plot(
+            x_vals,
+            _normal_pdf(x_vals, mu, sigma),
+            linestyle="--",
+            linewidth=2,
+            label=f"{transaction_type} fitted normal"
+        )
+
+    # If the KDE follows the fitted normal curve closely, the empirical distribution is
+    # consistent with log-normality on the original amount scale. That matters because
+    # fraud-detection thresholds are often set on a log scale, where a near-Gaussian shape
+    # makes extreme-value cutoffs more interpretable and statistically stable.
+
+    
+    ax.set_title("Log(Amount + 1) Distribution: TRANSFER vs CASH_OUT")
+    ax.set_xlabel("log(amount + 1)")
+    ax.set_ylabel("Density")
+    ax.legend(title="Transaction Type")
+    plt.tight_layout()
+
+    output_path = os.path.join(reports_dir, "amount_distribution.png")
+    plt.savefig(output_path, dpi=300, bbox_inches="tight")
+    plt.close()
+
+    print(f"\nChart successfully saved to {output_path}")
+
 
 def main():
     queries = [query_daily_volume, query_daily_fraud, query_daily_mean_amount]
@@ -125,6 +205,7 @@ def main():
     seq_end = time.perf_counter()
     seq_duration = seq_end - seq_start
 
+    print("Executing parallel benchmark...")
     par_start = time.perf_counter()
 
     with ThreadPoolExecutor(max_workers=3) as executor:
@@ -132,7 +213,6 @@ def main():
         par_results = list(executor.map(lambda fn: fn(), queries))
 
     par_end = time.perf_counter()
-
     par_duration = par_end - par_start
 
     print(f"Sequential Execution Time: {seq_duration:.4f} seconds")
@@ -141,11 +221,10 @@ def main():
     # Calculate & Log Speedup
     speedup = seq_duration / par_duration
     print(f"Speedup: {speedup:.2f}x")
-    print(f"Daily Volume Rows      : {len(seq_results[0])}")
-    print(f"Daily Fraud Rows       : {len(seq_results[1])}")
-    print(f"Daily Mean Amount Rows : {len(seq_results[2])}")
-
 
     plot_time_series(par_results)
+    plot_amount_distribution()
+
+
 if __name__ == "__main__":
     main()

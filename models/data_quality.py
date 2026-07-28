@@ -5,7 +5,6 @@ import os
 class DataQualityError(Exception):
     pass
 
-
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(BASE_DIR, "finflow.duckdb")
 
@@ -57,8 +56,8 @@ def check():
                 WHERE dt.{dim_col} IS NULL
             """).fetchone()[0]
 
-        if unmatched > 0:
-            raise DataQualityError(f"Foreign key '{fk_col}' has {unmatched} unmatched rows in '{dim_table}'")
+            if unmatched > 0:
+                raise DataQualityError(f"Foreign key '{fk_col}' has {unmatched} unmatched rows in '{dim_table}'")
 
         # 4. Check for negative amounts
         negative_amounts = conn.execute("""
