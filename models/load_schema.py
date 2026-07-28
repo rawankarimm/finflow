@@ -1,24 +1,33 @@
 import os
 import time
 import duckdb
-import pyarrow.parquet as pq  #loading the parquet file lazily in batches instead of loading the whole dataset to RAM at once 
+import pyarrow.parquet as pq  # loading the parquet file lazily in batches
 import config
 
-DB_PATH = getattr(config, "db_path", "data/finflow.duckdb")
-SCHEMA_SQL_PATH = "models/schema.sql"
-PROCESSED_TRANSACTIONS = "data/processed/transactions.parquet"
+# Fix 1: Ensure DB_PATH points directly to finflow.duckdb in the root project directory by default
+# Force absolute path to project root finflow.duckdb
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DB_PATH = os.path.join(PROJECT_ROOT, "finflow.duckdb")
+SCHEMA_SQL_PATH = os.path.join(PROJECT_ROOT, "models", "schema.sql")
+PROCESSED_TRANSACTIONS = os.path.join(PROJECT_ROOT, "data", "processed", "transactions.parquet")
+
 
 def main():
     start_time = time.perf_counter()
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 
-    # 1. Reset Schema for Idempotency
+    print(f"Target Database File: {DB_PATH}")
+
+    # Connect to persistent disk database
     conn = duckdb.connect(DB_PATH)
     
     # Restrict DuckDB internal RAM usage
-    conn.execute("SET memory_limit='1GB';")
+    conn.execute("SET memory_limit='2GB';")
 
     print("Resetting schema...")
+
+    # Fix 2: Wrap DDL and Inserts in a single transaction block for speed & disk durability
+    conn.execute("BEGIN TRANSACTION;")
 
     # DROP TABLE to guarantee idempotency on re-running the script
     conn.execute("""
@@ -31,20 +40,18 @@ def main():
         DROP SEQUENCE IF EXISTS transaction_seq;
     """)
 
-    # Executes DDL commands to recreate empty fact and dimention tables cleanly
+    # Recreate empty fact and dimension tables cleanly from schema.sql
     with open(SCHEMA_SQL_PATH, "r") as f:
         conn.execute(f.read())
 
-    # 2. Populate dimension tables first in order to join their primary keys when inserting rows in the fact table 
+    # 2. Populate dimension tables first
     print("Populating dimension tables...")
     
     conn.execute("""
         INSERT INTO dim_transaction_type (transaction_type_id, transaction_type_name)
         SELECT ROW_NUMBER() OVER (), type FROM (SELECT DISTINCT type FROM read_parquet(?));
-    """, [PROCESSED_TRANSACTIONS])  #auto generating a unique ID for each type
+    """, [PROCESSED_TRANSACTIONS])
 
-
-    # Populate account types for lookup table 
     conn.execute("""
         INSERT INTO dim_account_type VALUES (1, 'Customer'), (2, 'Merchant') ON CONFLICT DO NOTHING;
     """)
@@ -61,7 +68,7 @@ def main():
         FROM read_parquet(?);
     """, [PROCESSED_TRANSACTIONS])
 
-    # 3. Stream Fact Table in Chunks (RAM Safe)
+    # 3. Stream Fact Table in Chunks
     chunk_size = getattr(config, "chunk_size", 500000)
     print(f"\n--- Loading Fact Transactions in chunks of {chunk_size:,} ---")
     
@@ -105,6 +112,9 @@ def main():
         """)
         print(f"Processed chunk {i + 1}: {len(batch):,} rows inserted.")
 
+    # Commit transaction to disk permanently
+    conn.execute("COMMIT;")
+
     # 4. Verify Row Count
     db_row_count = conn.execute("SELECT COUNT(*) FROM fact_transactions").fetchone()[0]
     parquet_row_count = parquet_file.metadata.num_rows
@@ -117,16 +127,10 @@ def main():
     else:
         print(f"MISMATCH: Loaded {db_row_count} rows out of {parquet_row_count} expected rows.")
 
+    # Explicitly close to flush WAL logs
     conn.close()
 
     print(f"Total load time: {time.perf_counter() - start_time:.2f} seconds")
 
 if __name__ == "__main__":
     main()
-
-
-
-
-# DuckDB is an embedded database (like SQLite). If multiple processes spawned by
-# ProcessPoolExecutor try to execute INSERT statements into the same finflow.
-# duckdb file simultaneously, DuckDB throws a lock exception (IO Error: Could not set lock on file)
