@@ -182,7 +182,7 @@ def plot_amount_distribution():
     # fraud-detection thresholds are often set on a log scale, where a near-Gaussian shape
     # makes extreme-value cutoffs more interpretable and statistically stable.
 
-    
+
     ax.set_title("Log(Amount + 1) Distribution: TRANSFER vs CASH_OUT")
     ax.set_xlabel("log(amount + 1)")
     ax.set_ylabel("Density")
@@ -194,6 +194,62 @@ def plot_amount_distribution():
     plt.close()
 
     print(f"\nChart successfully saved to {output_path}")
+
+
+def query_balance_drain_distribution():
+    conn = duckdb.connect(DB_PATH, read_only=True)
+    result = conn.execute("""
+        SELECT balance_drain
+        FROM fact_transactions
+        WHERE balance_drain IS NOT NULL
+    """).df()
+    conn.close()
+    return result
+
+
+def plot_balance_drain_distribution():
+    df = query_balance_drain_distribution()
+    df = df.dropna(subset=["balance_drain"])
+
+    reports_dir = os.path.join(PROJECT_ROOT, "reports")
+    os.makedirs(reports_dir, exist_ok=True)
+
+    _, ax = plt.subplots(figsize=(10, 6))
+    sns.set_theme(style="whitegrid")
+
+    sns.histplot(
+        data=df,
+        x="balance_drain",
+        bins=50,
+        kde=True,
+        color="teal",
+        edgecolor="black",
+        ax=ax
+    )
+
+    inconsistency_pct = (np.abs(df["balance_drain"]) > 1).mean() * 100
+    ax.axvline(0, color="black", linestyle="--", linewidth=1)
+    ax.text(
+        0.98,
+        0.95,
+        f"% with |balance_drain| > 1: {inconsistency_pct:.2f}%",
+        transform=ax.transAxes,
+        ha="right",
+        va="top",
+        bbox={"boxstyle": "round", "facecolor": "white", "alpha": 0.8}
+    )
+
+    ax.set_title("Balance Drain Distribution")
+    ax.set_xlabel("balance_drain")
+    ax.set_ylabel("Count")
+    plt.tight_layout()
+
+    output_path = os.path.join(reports_dir, "balance_drain_distribution.png")
+    plt.savefig(output_path, dpi=300, bbox_inches="tight")
+    plt.close()
+
+    print(f"\nBalance drain inconsistency rate (> 1): {inconsistency_pct:.2f}%")
+    print(f"Chart successfully saved to {output_path}")
 
 
 def main():
@@ -224,6 +280,7 @@ def main():
 
     plot_time_series(par_results)
     plot_amount_distribution()
+    plot_balance_drain_distribution()
 
 
 if __name__ == "__main__":
