@@ -78,7 +78,7 @@ def main():
     """, [PROCESSED_TRANSACTIONS])
 
     # 3. Stream Fact Table in Chunks
-    chunk_size = getattr(config, "chunk_size", 500000)
+    chunk_size = getattr(config, "chunk_size", 1000000)
     print(f"\n--- Loading Fact Transactions in chunks of {chunk_size:,} ---")
     
     parquet_file = pq.ParquetFile(PROCESSED_TRANSACTIONS)

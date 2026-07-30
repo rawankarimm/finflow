@@ -65,7 +65,7 @@ def plot_time_series(par_results):
     reports_dir = os.path.join(PROJECT_ROOT, "reports")
     os.makedirs(reports_dir, exist_ok=True)
 
-    fig, axes = plt.subplots(nrows=3, ncols=1, figsize=(12, 14), sharex=True)
+    _, axes = plt.subplots(nrows=3, ncols=1, figsize=(12, 14), sharex=True) #returns an array
     sns.set_theme(style="whitegrid")
 
     # PANEL 1: Daily Volume
@@ -79,7 +79,7 @@ def plot_time_series(par_results):
     )
     axes[0].set_title("Daily Transaction Volume by Type", fontsize=14, fontweight="bold")
     axes[0].set_ylabel("Transaction Count")
-    axes[0].legend(title="Type", bbox_to_anchor=(1.02, 1), loc="upper left")
+    axes[0].legend(title="Type", bbox_to_anchor=(1.02, 1), loc="upper left") #lines don't overlap 
 
     # PANEL 2: Daily Fraud Count
     sns.lineplot(
@@ -108,12 +108,11 @@ def plot_time_series(par_results):
     axes[2].set_ylabel("Mean Amount ($)")
     axes[2].legend(title="Type", bbox_to_anchor=(1.02, 1), loc="upper left")
 
-    plt.tight_layout()
+    plt.tight_layout()  #automatically recalculates padding so subplots, titles and axis labels don't overlap
 
     output_path = os.path.join(reports_dir, "time_series_analysis.png")
-    plt.savefig(output_path, dpi=300, bbox_inches="tight")
-    plt.close()
-
+    plt.savefig(output_path, dpi=300, bbox_inches="tight") #renders fig at high resolution
+    plt.close() #closes the matplot figure from memory to prevent memory leaks
     print(f"\nChart successfully saved to {output_path}")
 
 # 2.Amount Distribution
@@ -133,9 +132,9 @@ def query_amount_distribution():
     return result
 
 
-def _normal_pdf(x, mu, sigma):
+def _normal_pdf(x, mu, sigma):  #private helper function for internal use in plot_amount_distribution()
     if sigma <= 0:
-        return np.zeros_like(x, dtype=float)
+        return np.zeros_like(x, dtype=float) #a zero array of type float
     z = (x - mu) / sigma
     return np.exp(-0.5 * z**2) / (sigma * np.sqrt(2 * np.pi))
 
@@ -147,29 +146,29 @@ def plot_amount_distribution():
     reports_dir = os.path.join(PROJECT_ROOT, "reports")
     os.makedirs(reports_dir, exist_ok=True)
 
-    fig, ax = plt.subplots(figsize=(10, 6))
+    _, ax = plt.subplots(figsize=(10, 6))
     sns.set_theme(style="whitegrid")
 
     for transaction_type, group in df.groupby("transaction_type", sort=True):
-        sns.kdeplot(
+        sns.kdeplot(  #the shaded part
             data=group,
             x="log_amount_plus_one",
             label=transaction_type,
             fill=True,
-            alpha=0.2,
+            alpha=0.2, #opacity
             linewidth=2,
-            ax=ax
+            ax=ax # 1 row, 1 col
         )
 
         mu = float(group["log_amount_plus_one"].mean())
-        sigma = float(group["log_amount_plus_one"].std(ddof=0))
+        sigma = float(group["log_amount_plus_one"].std(ddof=0))  #dividing by N for the whole population not a sample
 
         x_vals = np.linspace(
             group["log_amount_plus_one"].min(),
             group["log_amount_plus_one"].max(),
             400
         )
-        ax.plot(
+        ax.plot( #the dashed part 
             x_vals,
             _normal_pdf(x_vals, mu, sigma),
             linestyle="--",
@@ -178,9 +177,17 @@ def plot_amount_distribution():
         )
 
     # If the KDE follows the fitted normal curve closely, the empirical distribution is
-    # consistent with log-normality on the original amount scale. That matters because
-    # fraud-detection thresholds are often set on a log scale, where a near-Gaussian shape
-    # makes extreme-value cutoffs more interpretable and statistically stable.
+    # consistent with log-normality on the original amount scale. 
+
+    # TRANSFER curve aligns closely with the fitted nromal curve, showing that the
+    # TRANSFER transaction amounts are approximately log-normally distributed. 
+
+    # CASH_OUT KDE is a bit left-skewed (mean < median) compared to the fitted normal curve, indicating a slight deviation from
+    # strict log-normality.
+
+    # That matters because fraud-detection thresholds are often set on a log scale, where a near-Gaussian shapemakes extreme-value
+    # cutoffs more interpretable and statistically stable.
+
 
 
     ax.set_title("Log(Amount + 1) Distribution: TRANSFER vs CASH_OUT")
@@ -209,7 +216,7 @@ def query_balance_drain_distribution():
 
 def plot_balance_drain_distribution():
     df = query_balance_drain_distribution()
-    df = df.dropna(subset=["balance_drain"])
+    df = df.dropna(subset=["balance_drain"]) #defensive check and specifying where to look for nulls
 
     reports_dir = os.path.join(PROJECT_ROOT, "reports")
     os.makedirs(reports_dir, exist_ok=True)
@@ -230,8 +237,8 @@ def plot_balance_drain_distribution():
     inconsistency_pct = (np.abs(df["balance_drain"]) > 1).mean() * 100
     ax.axvline(0, color="black", linestyle="--", linewidth=1)
     ax.text(
-        0.98,
-        0.95,
+        0.98, # --> x 
+        0.95, # --> y
         f"% with |balance_drain| > 1: {inconsistency_pct:.2f}%",
         transform=ax.transAxes,
         ha="right",
